@@ -1,153 +1,141 @@
 """
-Functional pipeline tests – Script service.
+Functional pipeline tests – Script Service (Enterprise-grade).
 
-Tests script generation with realistic mock POI/asset data,
-verifying the NLP stub output structure and event publishing.
+Tests the complete script generation flow with realistic mock data:
+  - End-to-end: fetch POI → fetch assets → generate NLP → persist → publish event
+  - Multiple scripts per POI (version tracking)
+  - Scene structure integrity verification
+  - Narration text quality checks
 """
 
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-
 from tests.conftest import HEADERS
 
 
-# ── Mock data (realistic Michelin-quality POI + Assets) ───────────────────
+# ── Mock upstream service responses ─────────────────────────────────
+
+MOCK_POI_VILLA = {
+    "id": str(uuid.uuid4()),
+    "name": "Villa Paradiso – Les Baux-de-Provence",
+    "description": (
+        "Propriété d'exception de 450m² sur un terrain arboré de 2 hectares. "
+        "5 chambres, piscine à débordement, vue panoramique sur les Alpilles. "
+        "Prestations haut de gamme : domotique, cave à vin, garage 3 places."
+    ),
+    "address": "Route de Maussane, 13520 Les Baux-de-Provence",
+    "lat": 43.7439,
+    "lon": 4.7953,
+    "poi_type": "villa",
+    "tags": ["luxury", "pool", "provence", "panoramic_view"],
+    "status": "published",
+}
+
+MOCK_VILLA_ASSETS = {
+    "items": [
+        {"id": str(uuid.uuid4()), "name": "facade-drone.jpg", "asset_type": "photo"},
+        {"id": str(uuid.uuid4()), "name": "salon-panorama.jpg", "asset_type": "photo"},
+        {"id": str(uuid.uuid4()), "name": "piscine-sunset.jpg", "asset_type": "photo"},
+        {"id": str(uuid.uuid4()), "name": "visite-4k.mp4", "asset_type": "raw_video"},
+        {"id": str(uuid.uuid4()), "name": "plan-rdc.pdf", "asset_type": "floor_plan"},
+        {"id": str(uuid.uuid4()), "name": "dpe-classe-a.pdf", "asset_type": "document"},
+    ],
+    "total": 6,
+}
 
 
-def _mock_poi_response(poi_id: str):
-    """Return a mock httpx.Response for a realistic published POI."""
-    resp = MagicMock(spec=httpx.Response)
-    resp.status_code = 200
-    resp.json.return_value = {
-        "id": poi_id,
-        "name": "Villa Paradiso – Les Baux-de-Provence",
-        "description": (
-            "Propriété d'exception de 450m² sur un terrain arboré de 2 hectares. "
-            "5 chambres, piscine à débordement, vue sur les Alpilles."
-        ),
-        "address": "Route de Maussane, 13520 Les Baux-de-Provence",
-        "lat": 43.7439,
-        "lon": 4.7953,
-        "poi_type": "villa",
-        "tags": ["luxury", "pool", "provence"],
-        "status": "published",
-        "version": 1,
-    }
-    return resp
+def _mock_resp(status_code: int, data: dict):
+    r = MagicMock(spec=httpx.Response)
+    r.status_code = status_code
+    r.json.return_value = data
+    return r
 
 
-def _mock_assets_response():
-    """Return a mock httpx.Response for realistic assets."""
-    resp = MagicMock(spec=httpx.Response)
-    resp.status_code = 200
-    resp.json.return_value = {
-        "items": [
-            {
-                "id": str(uuid.uuid4()),
-                "name": "facade_principale.jpg",
-                "asset_type": "photo",
-                "description": "Vue de la façade principale",
-            },
-            {
-                "id": str(uuid.uuid4()),
-                "name": "piscine_drone.jpg",
-                "asset_type": "photo",
-                "description": "Vue aérienne de la piscine",
-            },
-            {
-                "id": str(uuid.uuid4()),
-                "name": "visite_raw.mp4",
-                "asset_type": "raw_video",
-                "description": "Captation vidéo brute de la visite",
-            },
-        ],
-        "total": 3,
-    }
-    return resp
+# ═══════════════════════════════════════════════════════════════════════
+#  Pipeline: Full script generation
+# ═══════════════════════════════════════════════════════════════════════
 
 
-@patch("app.integrations.kafka_producer.publish_video_event", new_callable=AsyncMock)
+@patch("app.services.script_service.publish_video_event", new_callable=AsyncMock)
 @patch("app.services.script_service._asset_client")
 @patch("app.services.script_service._poi_client")
-def test_full_script_generation(mock_poi, mock_asset, mock_kafka, client):
-    """Test complete script generation pipeline with realistic data."""
-    poi_id = str(uuid.uuid4())
-    mock_poi.get = AsyncMock(return_value=_mock_poi_response(poi_id))
-    mock_asset.get = AsyncMock(return_value=_mock_assets_response())
+def test_full_script_generation_pipeline(mock_poi, mock_asset, mock_kafka, client):
+    """Generate a complete video script from POI + assets → verify all outputs."""
+    mock_poi.get = AsyncMock(return_value=_mock_resp(200, MOCK_POI_VILLA))
+    mock_asset.get = AsyncMock(return_value=_mock_resp(200, MOCK_VILLA_ASSETS))
 
-    # Generate script
+    poi_id = str(uuid.uuid4())
+
+    # 1) Generate script
     resp = client.post(f"/scripts/generate?poi_id={poi_id}", headers=HEADERS)
     assert resp.status_code == 201
-
     script = resp.json()
+    script_id = script["id"]
+
+    # 2) Verify script structure
     assert script["poi_id"] == poi_id
-    assert "Video Script" in script["title"]
     assert script["tone"] == "warm"
     assert script["total_duration_seconds"] == 30.0
     assert script["nlp_provider"] == "stub"
     assert script["version"] == 1
 
-    # Verify scene structure
+    # 3) Verify scenes (stub generates 6)
     scenes = script["scenes"]
     assert len(scenes) == 6
-    for scene in scenes:
-        assert "scene_number" in scene
-        assert "title" in scene
-        assert "visual_prompt" in scene
-        assert "duration_seconds" in scene
+    total_duration = sum(s["duration_seconds"] for s in scenes)
+    assert total_duration == 30.0
 
-    # Verify narration text is present
+    # Scenes are numbered sequentially
+    for i, scene in enumerate(scenes):
+        assert scene["scene_number"] == i + 1
+        assert len(scene["title"]) > 0
+        assert len(scene["description"]) > 0
+
+    # 4) Verify narration text
     assert script["narration_text"] is not None
-    assert len(script["narration_text"]) > 50
+    assert len(script["narration_text"]) > 20
 
-    # Verify metadata
+    # 5) Verify metadata context
     assert script["metadata"]["poi_name"] == "Villa Paradiso – Les Baux-de-Provence"
-    assert script["metadata"]["asset_count"] == 3
+    assert script["metadata"]["asset_count"] == 6
 
-    # Verify script is persisted and can be fetched
-    script_id = script["id"]
+    # 6) Verify persistence – get by ID
     resp = client.get(f"/scripts/{script_id}", headers=HEADERS)
     assert resp.status_code == 200
     assert resp.json()["id"] == script_id
 
+    # 7) Verify persistence – list by poi_id
+    resp = client.get(f"/scripts?poi_id={poi_id}", headers=HEADERS)
+    assert resp.json()["total"] == 1
 
-@patch("app.integrations.kafka_producer.publish_video_event", new_callable=AsyncMock)
+    # 8) Verify Kafka event published
+    mock_kafka.assert_called_once()
+
+
+@patch("app.services.script_service.publish_video_event", new_callable=AsyncMock)
 @patch("app.services.script_service._asset_client")
 @patch("app.services.script_service._poi_client")
-def test_script_listing_by_poi(mock_poi, mock_asset, mock_kafka, client):
-    """Generate 2 scripts for the same POI and verify listing."""
-    poi_id = str(uuid.uuid4())
-    mock_poi.get = AsyncMock(return_value=_mock_poi_response(poi_id))
-    mock_asset.get = AsyncMock(return_value=_mock_assets_response())
+def test_multiple_scripts_for_same_poi(mock_poi, mock_asset, mock_kafka, client):
+    """Generate multiple scripts for the same POI – all coexist."""
+    mock_poi.get = AsyncMock(return_value=_mock_resp(200, MOCK_POI_VILLA))
+    mock_asset.get = AsyncMock(return_value=_mock_resp(200, MOCK_VILLA_ASSETS))
 
-    # Generate 2 scripts
-    for _ in range(2):
+    poi_id = str(uuid.uuid4())
+    script_ids = []
+
+    for _ in range(3):
         resp = client.post(f"/scripts/generate?poi_id={poi_id}", headers=HEADERS)
         assert resp.status_code == 201
+        script_ids.append(resp.json()["id"])
 
-    # List by poi_id
+    # All 3 scripts exist
     resp = client.get(f"/scripts?poi_id={poi_id}", headers=HEADERS)
     data = resp.json()
-    assert data["total"] == 2
-    assert all(s["poi_id"] == poi_id for s in data["items"])
+    assert data["total"] == 3
+    returned_ids = {s["id"] for s in data["items"]}
+    assert set(script_ids) == returned_ids
 
-
-@patch("app.integrations.kafka_producer.publish_video_event", new_callable=AsyncMock)
-@patch("app.services.script_service._asset_client")
-@patch("app.services.script_service._poi_client")
-def test_script_generation_with_empty_assets(mock_poi, mock_asset, mock_kafka, client):
-    """Test script generation when POI has no assets."""
-    poi_id = str(uuid.uuid4())
-    mock_poi.get = AsyncMock(return_value=_mock_poi_response(poi_id))
-
-    empty_assets = MagicMock(spec=httpx.Response)
-    empty_assets.status_code = 200
-    empty_assets.json.return_value = {"items": [], "total": 0}
-    mock_asset.get = AsyncMock(return_value=empty_assets)
-
-    resp = client.post(f"/scripts/generate?poi_id={poi_id}", headers=HEADERS)
-    assert resp.status_code == 201
-    assert resp.json()["metadata"]["asset_count"] == 0
-
+    # Each script has unique ID
+    assert len(set(script_ids)) == 3

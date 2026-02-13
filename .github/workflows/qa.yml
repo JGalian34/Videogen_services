@@ -15,11 +15,19 @@ on:
         required: false
         default: "false"
 
+env:
+  API_KEY: dev-api-key
+  LOG_FORMAT: text
+  RUNWAY_MODE: stub
+  NLP_PROVIDER: stub
+  PYTHONDONTWRITEBYTECODE: "1"
+
 jobs:
   # ── Job 1: Fast (lint + unit tests) ──────────────────────────
   fast:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         service:
           - poi-service
@@ -33,14 +41,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Install dependencies
         run: |
-          pip install ruff black mypy
+          pip install --upgrade pip
+          pip install ruff black mypy pytest pytest-asyncio pytest-cov httpx
           pip install ./libs/contracts ./libs/common
           cd services/${{ matrix.service }}
           pip install ".[dev]" 2>/dev/null || pip install . 2>/dev/null || true
-          pip install pytest pytest-asyncio httpx
 
       - name: Lint ${{ matrix.service }}
         run: |
@@ -52,21 +61,22 @@ jobs:
       - name: Test ${{ matrix.service }}
         run: |
           cd services/${{ matrix.service }}
-          python -m pytest tests/ -v --tb=short --junitxml=junit-${{ matrix.service }}.xml
+          PYTHONPATH=. python -m pytest tests/ -v --tb=short \
+            --junitxml=junit-${{ matrix.service }}.xml \
+            --cov=app --cov-report=xml:coverage-${{ matrix.service }}.xml \
+            --cov-report=term-missing
         env:
           POSTGRES_HOST: ""
           POSTGRES_DB: ""
-          API_KEY: test-key
-          LOG_FORMAT: text
-          RUNWAY_MODE: stub
-          NLP_PROVIDER: stub
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: junit-${{ matrix.service }}
-          path: services/${{ matrix.service }}/junit-*.xml
+          path: |
+            services/${{ matrix.service }}/junit-*.xml
+            services/${{ matrix.service }}/coverage-*.xml
 
   # ── Job 2: E2E (docker-compose + HTTP E2E) ──────────────────
   e2e:
@@ -79,9 +89,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Install QA dependencies
-        run: pip install -r tools/qa/requirements.txt
+        run: |
+          pip install --upgrade pip
+          pip install -r tools/qa/requirements.txt
 
       - name: Start stack
         run: docker compose up -d --build --wait
@@ -89,20 +102,25 @@ jobs:
 
       - name: Wait for services
         run: |
-          for port in 8001 8002 8003 8004 8005; do
-            for i in $(seq 1 30); do
-              if curl -sf http://localhost:$port/healthz >/dev/null 2>&1; then
-                echo "localhost:$port ready"
+          services=("8001" "8002" "8003" "8004" "8005")
+          for port in "${services[@]}"; do
+            echo -n "Waiting for localhost:$port ..."
+            for i in $(seq 1 60); do
+              if curl -sf "http://localhost:$port/healthz" >/dev/null 2>&1; then
+                echo " ready ✓"
                 break
               fi
-              sleep 5
+              if [ "$i" -eq 60 ]; then
+                echo " TIMEOUT ✗"
+                docker compose logs --tail=50
+                exit 1
+              fi
+              sleep 2
             done
           done
 
       - name: Run E2E tests
         run: python -m tools.qa.run --e2e-only
-        env:
-          API_KEY: dev-api-key
 
       - name: Upload QA artifacts
         if: always()
@@ -126,15 +144,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Install QA deps + k6
         run: |
+          pip install --upgrade pip
           pip install -r tools/qa/requirements.txt
           sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install -y k6
+          sudo gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update && sudo apt-get install -y k6
 
       - name: Start stack
         run: docker compose up -d --build --wait
@@ -142,28 +165,35 @@ jobs:
 
       - name: Wait for services
         run: |
-          for port in 8001 8002 8003 8004 8005; do
-            for i in $(seq 1 30); do
-              if curl -sf http://localhost:$port/healthz >/dev/null 2>&1; then
-                echo "localhost:$port ready"
+          services=("8001" "8002" "8003" "8004" "8005")
+          for port in "${services[@]}"; do
+            echo -n "Waiting for localhost:$port ..."
+            for i in $(seq 1 60); do
+              if curl -sf "http://localhost:$port/healthz" >/dev/null 2>&1; then
+                echo " ready ✓"
                 break
               fi
-              sleep 5
+              if [ "$i" -eq 60 ]; then
+                echo " TIMEOUT ✗"
+                docker compose logs --tail=50
+                exit 1
+              fi
+              sleep 2
             done
           done
 
       - name: Run load test (baseline only in CI)
         run: |
+          mkdir -p artifacts/qa
           k6 run tools/qa/load/k6/load.js \
             --env SCENARIO=baseline \
-            --env ARTIFACTS_DIR=artifacts/qa
+            --env ARTIFACTS_DIR=artifacts/qa \
+            --env API_KEY=$API_KEY
         env:
-          API_KEY: dev-api-key
+          K6_OUT: ""
 
-      - name: Run QA orchestrator (load-only report)
+      - name: Run QA orchestrator (load report)
         run: python -m tools.qa.run --load-only
-        env:
-          API_KEY: dev-api-key
 
       - name: Upload load artifacts
         if: always()
@@ -175,4 +205,3 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
-

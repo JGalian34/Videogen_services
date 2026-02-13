@@ -283,6 +283,13 @@ qa-e2e: ## E2E HTTP tests only (services must be running)
 qa-load: ## Load test only (services must be running, requires k6)
 	$(QA_PY) --load-only
 
+qa-coverage: ## Full QA pipeline with coverage enabled
+	QA_COVERAGE=1 $(QA_PY) --compose --teardown
+
+qa-report: ## Generate report from last artifacts (no test run)
+	@echo "Artifacts in artifacts/qa/:"
+	@ls -la artifacts/qa/ 2>/dev/null || echo "  (no artifacts found – run make qa first)"
+
 qa-clean: ## Tear down stack + remove volumes + artifacts
 	docker compose down -v
 	rm -rf artifacts/qa/*.json artifacts/qa/*.md artifacts/qa/*.xml

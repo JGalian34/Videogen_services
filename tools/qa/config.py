@@ -3,6 +3,8 @@ Centralised QA configuration.
 
 Every value is overridable via environment variables so CI and local
 invocations share the same harness with different knobs.
+
+Hierarchy:  env var → default here.
 """
 
 from __future__ import annotations
@@ -38,11 +40,21 @@ SLO_WRITE_P95_MS = float(os.getenv("SLO_WRITE_P95_MS", "1500"))
 SLO_MAX_RESTARTS = int(os.getenv("SLO_MAX_RESTARTS", "0"))
 
 # ── Load test parameters ─────────────────────────────────────────────
+LOAD_VUS_BASELINE = int(os.getenv("LOAD_VUS_BASELINE", "10"))
 LOAD_VUS_HIGH = int(os.getenv("LOAD_VUS_HIGH", "200"))
-LOAD_VUS_SPIKE = int(os.getenv("LOAD_VUS_SPIKE", "500"))
+LOAD_VUS_SPIKE = int(os.getenv("LOAD_VUS_SPIKE", "1000"))
 LOAD_VUS_SOAK = int(os.getenv("LOAD_VUS_SOAK", "100"))
+LOAD_DURATION_BASELINE = os.getenv("LOAD_DURATION_BASELINE", "1m")
 LOAD_DURATION_HIGH = os.getenv("LOAD_DURATION_HIGH", "3m")
 LOAD_DURATION_SOAK = os.getenv("LOAD_DURATION_SOAK", "10m")
+
+# ── Docker stats sampling ────────────────────────────────────────────
+DOCKER_STATS_ENABLED = os.getenv("QA_DOCKER_STATS", "1").lower() in ("1", "true", "yes")
+DOCKER_STATS_INTERVAL_S = float(os.getenv("QA_DOCKER_STATS_INTERVAL", "5"))
+DOCKER_STATS_SAMPLES = int(os.getenv("QA_DOCKER_STATS_SAMPLES", "6"))
+
+# ── Coverage ─────────────────────────────────────────────────────────
+COVERAGE_ENABLED = os.getenv("QA_COVERAGE", "0").lower() in ("1", "true", "yes")
 
 # ── Paths ────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -68,3 +80,13 @@ SERVICE_PORTS: dict[str, int] = {
     "render-service": 8005,
 }
 
+# ── Unit test environment (shared across all services) ───────────────
+UNIT_TEST_ENV: dict[str, str] = {
+    "POSTGRES_HOST": "",
+    "POSTGRES_DB": "",
+    "API_KEY": "test-key",
+    "LOG_FORMAT": "text",
+    "RUNWAY_MODE": "stub",
+    "NLP_PROVIDER": "stub",
+    "ELEVENLABS_MODE": "stub",
+}

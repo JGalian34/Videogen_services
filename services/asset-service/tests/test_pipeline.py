@@ -1,8 +1,12 @@
 """
-Functional pipeline tests – Asset service.
+Functional pipeline tests – Asset Service (Enterprise-grade).
 
 Tests the complete asset lifecycle with realistic mock data:
-  create multiple assets for a POI, update, list with filters and pagination.
+  - Multi-POI asset catalog management
+  - All asset types in a single property
+  - Bulk creation → listing → update → version tracking
+  - POI isolation (assets from POI A never leak into POI B)
+  - Rich metadata preservation through updates
 """
 
 import uuid
@@ -10,141 +14,231 @@ import uuid
 from tests.conftest import HEADERS
 
 
-# ── Mock data (realistic Michelin-quality assets) ─────────────────────────
+# ── Mock data: complete property media catalog ──────────────────────
 
-POI_ID = str(uuid.uuid4())
+POI_ID_VILLA = str(uuid.uuid4())
+POI_ID_APARTMENT = str(uuid.uuid4())
 
-MOCK_ASSETS = [
+VILLA_ASSETS = [
     {
-        "poi_id": POI_ID,
-        "name": "facade_principale.jpg",
+        "poi_id": POI_ID_VILLA,
+        "name": "facade-aerienne-drone.jpg",
         "asset_type": "photo",
-        "description": "Vue de la façade principale depuis le portail d'entrée",
-        "file_path": "/data/assets/villa_paradiso/facade_principale.jpg",
+        "description": "Vue aérienne drone DJI Mavic 3, altitude 30m",
+        "file_path": "/data/villa/facade-drone.jpg",
         "mime_type": "image/jpeg",
-        "file_size": 4_200_000,
-        "metadata": {"resolution": "4032x3024", "camera": "Sony A7R IV", "hdr": True},
+        "file_size": 5_200_000,
+        "metadata": {"camera": "DJI Mavic 3", "resolution": "5280x3956"},
     },
     {
-        "poi_id": POI_ID,
-        "name": "plan_architecte_rdc.pdf",
-        "asset_type": "plan",
-        "description": "Plan architecte du rez-de-chaussée",
-        "file_path": "/data/assets/villa_paradiso/plan_rdc.pdf",
+        "poi_id": POI_ID_VILLA,
+        "name": "salon-panoramique.jpg",
+        "asset_type": "photo",
+        "description": "Salon avec baies vitrées et vue Alpilles",
+        "file_path": "/data/villa/salon.jpg",
+        "mime_type": "image/jpeg",
+        "file_size": 3_800_000,
+    },
+    {
+        "poi_id": POI_ID_VILLA,
+        "name": "piscine-debordement.jpg",
+        "asset_type": "photo",
+        "description": "Piscine à débordement, coucher de soleil",
+        "file_path": "/data/villa/piscine.jpg",
+        "mime_type": "image/jpeg",
+        "file_size": 4_100_000,
+    },
+    {
+        "poi_id": POI_ID_VILLA,
+        "name": "plan-rdc.pdf",
+        "asset_type": "floor_plan",
+        "description": "Plan RDC échelle 1/100",
+        "file_path": "/data/villa/plan-rdc.pdf",
         "mime_type": "application/pdf",
-        "file_size": 850_000,
-        "metadata": {"scale": "1:100", "floor": "ground"},
+        "file_size": 920_000,
     },
     {
-        "poi_id": POI_ID,
-        "name": "visite_virtuelle_raw.mp4",
+        "poi_id": POI_ID_VILLA,
+        "name": "visite-virtuelle.mp4",
         "asset_type": "raw_video",
-        "description": "Captation vidéo brute de la visite complète (drone + intérieur)",
-        "file_path": "/data/assets/villa_paradiso/visite_raw.mp4",
+        "description": "Visite 4K HDR 3min24s",
+        "file_path": "/data/villa/visite-4k.mp4",
         "mime_type": "video/mp4",
-        "file_size": 1_200_000_000,
-        "metadata": {"duration_seconds": 180, "resolution": "4K", "fps": 60},
+        "file_size": 450_000_000,
+        "metadata": {"duration_seconds": 204, "codec": "h265"},
     },
     {
-        "poi_id": POI_ID,
-        "name": "piscine_drone.jpg",
+        "poi_id": POI_ID_VILLA,
+        "name": "dpe-classe-a.pdf",
+        "asset_type": "document",
+        "description": "Diagnostic de Performance Énergétique – Classe A",
+        "file_path": "/data/villa/dpe.pdf",
+        "mime_type": "application/pdf",
+        "file_size": 150_000,
+    },
+]
+
+APARTMENT_ASSETS = [
+    {
+        "poi_id": POI_ID_APARTMENT,
+        "name": "vue-toits-paris.jpg",
         "asset_type": "photo",
-        "description": "Vue aérienne drone de la piscine à débordement et du jardin",
-        "file_path": "/data/assets/villa_paradiso/piscine_drone.jpg",
+        "description": "Vue panoramique toits de Paris depuis balcon 3ème étage",
+        "file_path": "/data/apartment/vue-toits.jpg",
         "mime_type": "image/jpeg",
-        "file_size": 5_100_000,
-        "metadata": {"resolution": "5472x3648", "drone": "DJI Mavic 3 Pro"},
+        "file_size": 2_900_000,
+    },
+    {
+        "poi_id": POI_ID_APARTMENT,
+        "name": "parquet-hongrie.jpg",
+        "asset_type": "photo",
+        "description": "Détail parquet point de Hongrie d'origine",
+        "file_path": "/data/apartment/parquet.jpg",
+        "mime_type": "image/jpeg",
+        "file_size": 1_800_000,
     },
 ]
 
 
-def test_full_asset_lifecycle(client):
-    """Create multiple assets, verify listing, update, and version bumping."""
-    created_ids = []
+# ═══════════════════════════════════════════════════════════════════════
+#  Pipeline: Complete property media catalog
+# ═══════════════════════════════════════════════════════════════════════
 
-    # 1) Create all assets
-    for asset_data in MOCK_ASSETS:
-        resp = client.post("/assets", json=asset_data, headers=HEADERS)
+
+def test_full_asset_lifecycle(client):
+    """Create → list → get → update → verify version tracking."""
+    # 1) Create all villa assets
+    asset_ids = []
+    for mock in VILLA_ASSETS:
+        resp = client.post("/assets", json=mock, headers=HEADERS)
         assert resp.status_code == 201
         data = resp.json()
-        assert data["poi_id"] == POI_ID
         assert data["version"] == 1
-        created_ids.append(data["id"])
+        assert data["poi_id"] == POI_ID_VILLA
+        asset_ids.append(data["id"])
 
-    # 2) List all assets for this POI
-    resp = client.get(f"/assets?poi_id={POI_ID}", headers=HEADERS)
-    assert resp.status_code == 200
+    assert len(asset_ids) == 6
+
+    # 2) List all villa assets
+    resp = client.get(f"/assets?poi_id={POI_ID_VILLA}", headers=HEADERS)
     data = resp.json()
-    assert data["total"] == 4
+    assert data["total"] == 6
 
-    # 3) Get a specific asset
-    resp = client.get(f"/assets/{created_ids[0]}", headers=HEADERS)
+    # 3) Verify each asset type is present
+    types_found = {a["asset_type"] for a in data["items"]}
+    assert types_found == {"photo", "floor_plan", "raw_video", "document"}
+
+    # 4) Get specific asset and verify full details
+    resp = client.get(f"/assets/{asset_ids[0]}", headers=HEADERS)
     assert resp.status_code == 200
-    assert resp.json()["name"] == "facade_principale.jpg"
-    assert resp.json()["metadata"]["camera"] == "Sony A7R IV"
+    facade = resp.json()
+    assert facade["name"] == "facade-aerienne-drone.jpg"
+    assert facade["metadata"]["camera"] == "DJI Mavic 3"
 
-    # 4) Update asset (should bump version)
+    # 5) Update asset → version bump
     resp = client.patch(
-        f"/assets/{created_ids[0]}",
-        json={"description": "Façade rénovée – après travaux 2025"},
+        f"/assets/{asset_ids[0]}",
+        json={"description": "Vue aérienne retouchée, contraste amélioré"},
         headers=HEADERS,
     )
     assert resp.status_code == 200
     assert resp.json()["version"] == 2
-    assert "rénovée" in resp.json()["description"]
+    assert "retouchée" in resp.json()["description"]
+
+    # 6) Verify metadata preserved after description update
+    resp = client.get(f"/assets/{asset_ids[0]}", headers=HEADERS)
+    assert resp.json()["metadata"]["camera"] == "DJI Mavic 3"  # Not overwritten
 
 
-def test_assets_isolation_by_poi(client):
-    """Verify assets from different POIs don't leak into each other's lists."""
-    poi_a = str(uuid.uuid4())
-    poi_b = str(uuid.uuid4())
+def test_multi_poi_asset_isolation(client):
+    """Assets from different POIs must be completely isolated."""
+    # Create villa + apartment assets
+    for mock in VILLA_ASSETS[:3]:
+        client.post("/assets", json=mock, headers=HEADERS)
+    for mock in APARTMENT_ASSETS:
+        client.post("/assets", json=mock, headers=HEADERS)
 
-    # Create 3 assets for POI A
-    for i in range(3):
-        client.post(
-            "/assets",
-            json={"poi_id": poi_a, "name": f"a_{i}.jpg", "asset_type": "photo"},
-            headers=HEADERS,
-        )
-
-    # Create 2 assets for POI B
-    for i in range(2):
-        client.post(
-            "/assets",
-            json={"poi_id": poi_b, "name": f"b_{i}.jpg", "asset_type": "photo"},
-            headers=HEADERS,
-        )
-
-    # List POI A
-    resp = client.get(f"/assets?poi_id={poi_a}", headers=HEADERS)
+    # Villa: 3 assets
+    resp = client.get(f"/assets?poi_id={POI_ID_VILLA}", headers=HEADERS)
     assert resp.json()["total"] == 3
+    assert all(a["poi_id"] == POI_ID_VILLA for a in resp.json()["items"])
 
-    # List POI B
-    resp = client.get(f"/assets?poi_id={poi_b}", headers=HEADERS)
+    # Apartment: 2 assets
+    resp = client.get(f"/assets?poi_id={POI_ID_APARTMENT}", headers=HEADERS)
     assert resp.json()["total"] == 2
+    assert all(a["poi_id"] == POI_ID_APARTMENT for a in resp.json()["items"])
+
+    # All: 5 assets total
+    resp = client.get("/assets", headers=HEADERS)
+    assert resp.json()["total"] == 5
 
 
-def test_asset_pagination(client):
-    """Test pagination on asset listing."""
-    poi_id = str(uuid.uuid4())
-    for i in range(5):
+def test_asset_pagination_pipeline(client):
+    """Create 8 assets, paginate through them."""
+    for i in range(8):
         client.post(
             "/assets",
-            json={"poi_id": poi_id, "name": f"p_{i}.jpg", "asset_type": "photo"},
+            json={"poi_id": POI_ID_VILLA, "name": f"photo-{i:03d}.jpg", "asset_type": "photo"},
             headers=HEADERS,
         )
 
-    resp = client.get(f"/assets?poi_id={poi_id}&page=1&page_size=2", headers=HEADERS)
+    # Page 1: 3 items
+    resp = client.get(f"/assets?poi_id={POI_ID_VILLA}&page=1&page_size=3", headers=HEADERS)
+    page1 = resp.json()
+    assert page1["total"] == 8
+    assert len(page1["items"]) == 3
+
+    # Page 2: 3 items
+    resp = client.get(f"/assets?poi_id={POI_ID_VILLA}&page=2&page_size=3", headers=HEADERS)
+    assert len(resp.json()["items"]) == 3
+
+    # Page 3: 2 items
+    resp = client.get(f"/assets?poi_id={POI_ID_VILLA}&page=3&page_size=3", headers=HEADERS)
+    assert len(resp.json()["items"]) == 2
+
+    # Page 4: 0 items
+    resp = client.get(f"/assets?poi_id={POI_ID_VILLA}&page=4&page_size=3", headers=HEADERS)
+    assert resp.json()["items"] == []
+
+
+def test_sequential_updates_track_version(client):
+    """Multiple updates to the same asset should increment version correctly."""
+    resp = client.post("/assets", json=MOCK_VILLA_ASSETS_MINIMAL, headers=HEADERS)
+    asset_id = resp.json()["id"]
+    assert resp.json()["version"] == 1
+
+    for i in range(5):
+        resp = client.patch(
+            f"/assets/{asset_id}",
+            json={"name": f"iteration-{i + 1}.jpg"},
+            headers=HEADERS,
+        )
+        assert resp.json()["version"] == i + 2
+
+
+def test_video_asset_rich_metadata(client):
+    """Verify large file sizes and nested metadata preserved."""
+    MOCK_RAW_VIDEO = {
+        "poi_id": POI_ID_VILLA,
+        "name": "visite-4k-raw.mp4",
+        "asset_type": "raw_video",
+        "description": "Rush vidéo 4K HDR drone + intérieur",
+        "file_path": "/data/villa/visite-4k.mp4",
+        "mime_type": "video/mp4",
+        "file_size": 450_000_000,
+        "metadata": {"duration_seconds": 204, "codec": "h265", "resolution": "3840x2160"},
+    }
+    resp = client.post("/assets", json=MOCK_RAW_VIDEO, headers=HEADERS)
+    assert resp.status_code == 201
     data = resp.json()
-    assert data["total"] == 5
-    assert len(data["items"]) == 2
-
-    resp = client.get(f"/assets?poi_id={poi_id}&page=3&page_size=2", headers=HEADERS)
-    assert len(resp.json()["items"]) == 1
+    assert data["file_size"] == 450_000_000
+    assert data["metadata"]["duration_seconds"] == 204
+    assert data["metadata"]["codec"] == "h265"
 
 
-def test_readyz_without_real_db(client):
-    """In unit-test mode (SQLite), /readyz returns 503 because it checks the real PG engine."""
-    resp = client.get("/readyz")
-    assert resp.status_code in (200, 503)
-
+# Minimal mock for sequential update test
+MOCK_VILLA_ASSETS_MINIMAL = {
+    "poi_id": POI_ID_VILLA,
+    "name": "iteration-0.jpg",
+    "asset_type": "photo",
+}
