@@ -62,6 +62,7 @@ async def _get_producer():
 
 # ── Publish ─────────────────────────────────────────────────────────
 
+
 async def publish_event(
     *,
     topic: str,
@@ -115,6 +116,7 @@ async def publish_event(
 
 # ── DLQ ─────────────────────────────────────────────────────────────
 
+
 async def publish_to_dlq(
     *,
     original_topic: str,
@@ -148,6 +150,4 @@ async def publish_to_dlq(
         )
         logger.warning("Message sent to DLQ: %s", error)
     except Exception:
-        logger.error(
-            "Failed to publish to DLQ – message lost: %s", error, exc_info=True
-        )
+        logger.error("Failed to publish to DLQ – message lost: %s", error, exc_info=True)

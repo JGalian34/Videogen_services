@@ -46,6 +46,7 @@ def test_healthz(client):
 
 # ── Error tests ────────────────────────────────────────────────────
 
+
 def test_get_render_not_found(client):
     fake_id = str(uuid.uuid4())
     resp = client.get(f"/renders/{fake_id}", headers=HEADERS)

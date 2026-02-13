@@ -32,7 +32,9 @@ async def list_renders(
     svc: RenderService = Depends(_svc),
 ):
     items, total = svc.list_renders(poi_id=poi_id, page=page, page_size=page_size)
-    return RenderListResponse(items=[RenderJobResponse.from_model(r) for r in items], total=total, page=page, page_size=page_size)
+    return RenderListResponse(
+        items=[RenderJobResponse.from_model(r) for r in items], total=total, page=page, page_size=page_size
+    )
 
 
 @router.get("/{render_id}", response_model=RenderJobResponse)
@@ -66,4 +68,3 @@ async def publish_video(render_id: uuid.UUID, svc: RenderService = Depends(_svc)
     """
     job = await svc.publish_video(render_id)
     return RenderJobResponse.from_model(job)
-

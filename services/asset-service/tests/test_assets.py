@@ -85,6 +85,7 @@ def test_healthz(client):
 
 # ── Error tests ────────────────────────────────────────────────────
 
+
 def test_get_asset_not_found(client):
     fake_id = str(uuid.uuid4())
     resp = client.get(f"/assets/{fake_id}", headers=HEADERS)
@@ -106,4 +107,3 @@ def test_create_asset_missing_api_key(client):
 def test_create_asset_invalid_body(client):
     resp = client.post("/assets", json={}, headers=HEADERS)
     assert resp.status_code == 422
-

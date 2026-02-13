@@ -54,6 +54,7 @@ class TranscriptionListResponse(BaseModel):
 
 # ── Voiceover (TTS) ────────────────────────────────────────────
 
+
 class VoiceoverRequest(BaseModel):
     poi_id: uuid.UUID
     script_id: uuid.UUID
@@ -115,4 +116,3 @@ class VoiceoverResponse(BaseModel):
 class VoiceoverListResponse(BaseModel):
     items: list[VoiceoverResponse]
     total: int
-

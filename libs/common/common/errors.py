@@ -12,8 +12,8 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-
 # ── Base errors ────────────────────────────────────────────────────────
+
 
 class AppError(Exception):
     """Generic application error (400)."""
@@ -45,6 +45,7 @@ class AuthError(AppError):
 
 # ── Handlers ───────────────────────────────────────────────────────────
 
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(NotFoundError)
     async def _not_found(request: Request, exc: NotFoundError) -> JSONResponse:
@@ -75,4 +76,3 @@ def register_error_handlers(app: FastAPI) -> None:
             status_code=500,
             content={"error": "internal_server_error", "detail": "An unexpected error occurred"},
         )
-

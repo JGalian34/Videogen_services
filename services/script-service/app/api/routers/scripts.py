@@ -32,10 +32,11 @@ async def list_scripts(
     svc: ScriptService = Depends(_svc),
 ):
     items, total = svc.list_scripts(poi_id=poi_id, page=page, page_size=page_size)
-    return ScriptListResponse(items=[ScriptResponse.from_model(s) for s in items], total=total, page=page, page_size=page_size)
+    return ScriptListResponse(
+        items=[ScriptResponse.from_model(s) for s in items], total=total, page=page, page_size=page_size
+    )
 
 
 @router.get("/{script_id}", response_model=ScriptResponse)
 async def get_script(script_id: uuid.UUID, svc: ScriptService = Depends(_svc)):
     return ScriptResponse.from_model(svc.get_script(script_id))
-
