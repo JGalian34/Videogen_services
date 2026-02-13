@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: poi-video-platform
+
+commonLabels:
+  app.kubernetes.io/part-of: real-estate-poi-video-platform
+
+resources:
+  # ── Infrastructure ──
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - postgres.yaml
+  - redpanda.yaml
+  # ── Microservices ──
+  - poi-service.yaml
+  - asset-service.yaml
+  - script-service.yaml
+  - transcription-service.yaml
+  - render-service.yaml
+

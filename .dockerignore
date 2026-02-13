@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+dist
+build
+.mypy_cache
+.pytest_cache
+.ruff_cache
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Tests (not needed in prod images)
+tests/
+**/tests/
+
+# Documentation
+*.md
+LICENSE
+
+# Local data
+data/
+artifacts/
+
+# CI/CD
+.github/
+
+# Kubernetes manifests (not needed in images)
+deploy/
+
+# Tools
+tools/
+
+# Scripts (not needed in images)
+scripts/pipeline_test.py
+

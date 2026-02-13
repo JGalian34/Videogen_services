@@ -1,0 +1,195 @@
+# ============================================================
+# Real Estate POI Video Platform – Local Development Stack
+# ============================================================
+# Usage:
+#   docker compose up -d          # start everything
+#   docker compose logs -f        # follow logs
+#   docker compose down -v        # tear down (+ volumes)
+# ============================================================
+
+x-common-env: &common-env
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: platform
+  POSTGRES_PASSWORD: localdev
+  KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+  API_KEY: dev-api-key
+  LOG_LEVEL: DEBUG
+  LOG_FORMAT: json
+
+services:
+  # ──────────────── Infrastructure ────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: localdev
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health 2>/dev/null || rpk cluster info 2>/dev/null || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  # ──────────────── Application Services ──────────────────────
+
+  poi-service:
+    build:
+      context: .
+      dockerfile: services/poi-service/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      <<: *common-env
+      POSTGRES_DB: poi_service
+      SERVICE_PORT: "8001"
+      KAFKA_TOPIC_POI_EVENTS: poi.events
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  asset-service:
+    build:
+      context: .
+      dockerfile: services/asset-service/Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      <<: *common-env
+      POSTGRES_DB: asset_service
+      SERVICE_PORT: "8002"
+      KAFKA_TOPIC_ASSET_EVENTS: asset.events
+      ASSET_STORAGE_PATH: /data/assets
+    volumes:
+      - ./data/assets:/data/assets
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  script-service:
+    build:
+      context: .
+      dockerfile: services/script-service/Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      <<: *common-env
+      POSTGRES_DB: script_service
+      SERVICE_PORT: "8003"
+      KAFKA_TOPIC_VIDEO_EVENTS: video.events
+      POI_SERVICE_URL: http://poi-service:8001
+      ASSET_SERVICE_URL: http://asset-service:8002
+      NLP_PROVIDER: stub
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      poi-service:
+        condition: service_healthy
+      asset-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 25s
+
+  transcription-service:
+    build:
+      context: .
+      dockerfile: services/transcription-service/Dockerfile
+    ports:
+      - "8004:8004"
+    environment:
+      <<: *common-env
+      POSTGRES_DB: transcription_service
+      SERVICE_PORT: "8004"
+      KAFKA_TOPIC_VIDEO_EVENTS: video.events
+      ELEVENLABS_MODE: stub
+      ELEVENLABS_API_KEY: ""
+      ELEVENLABS_VOICE_ID: "21m00Tcm4TlvDq8ikWAM"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  render-service:
+    build:
+      context: .
+      dockerfile: services/render-service/Dockerfile
+    ports:
+      - "8005:8005"
+    environment:
+      <<: *common-env
+      POSTGRES_DB: render_service
+      SERVICE_PORT: "8005"
+      KAFKA_TOPIC_VIDEO_EVENTS: video.events
+      KAFKA_CONSUMER_GROUP: render-service-group
+      RUNWAY_MODE: stub
+      RUNWAY_API_KEY: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  pgdata:
+

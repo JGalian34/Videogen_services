@@ -1,0 +1,84 @@
+---
+# ── Redpanda Deployment (single-node dev mode) ────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redpanda
+  namespace: poi-video-platform
+  labels:
+    app.kubernetes.io/name: redpanda
+    app.kubernetes.io/component: infra
+    app.kubernetes.io/part-of: real-estate-poi-video-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redpanda
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redpanda
+        app.kubernetes.io/component: infra
+    spec:
+      containers:
+        - name: redpanda
+          image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
+          args:
+            - redpanda
+            - start
+            - --smp=1
+            - --memory=512M
+            - --reserve-memory=0M
+            - --overprovisioned
+            - --node-id=0
+            - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+            - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+          ports:
+            - name: kafka
+              containerPort: 9092
+            - name: admin
+              containerPort: 9644
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /v1/status/ready
+              port: admin
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /v1/status/ready
+              port: admin
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+---
+# ── Redpanda Service ───────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: redpanda
+  namespace: poi-video-platform
+  labels:
+    app.kubernetes.io/name: redpanda
+    app.kubernetes.io/component: infra
+spec:
+  selector:
+    app.kubernetes.io/name: redpanda
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: 9092
+    - name: admin
+      port: 9644
+      targetPort: 9644
+  type: ClusterIP
+

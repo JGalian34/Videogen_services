@@ -1,0 +1,105 @@
+---
+# ── PostgreSQL Deployment ──────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: poi-video-platform
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: infra
+    app.kubernetes.io/part-of: real-estate-poi-video-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: infra
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: POSTGRES_PASSWORD
+          # Create all 5 databases on startup
+          args:
+            - postgres
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "platform"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "platform"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: pgdata
+          emptyDir: {}
+        - name: init-scripts
+          configMap:
+            name: postgres-init
+
+---
+# ── PostgreSQL Service ──────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: poi-video-platform
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: infra
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP
+
+---
+# ── Init script – creates all databases ─────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: poi-video-platform
+data:
+  init-databases.sql: |
+    CREATE DATABASE poi_db;
+    CREATE DATABASE asset_db;
+    CREATE DATABASE script_db;
+    CREATE DATABASE transcription_db;
+    CREATE DATABASE render_db;
+

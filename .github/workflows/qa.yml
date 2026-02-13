@@ -1,0 +1,178 @@
+name: QA Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly at 03:00 UTC – includes load test
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      run_load:
+        description: "Run load tests"
+        required: false
+        default: "false"
+
+jobs:
+  # ── Job 1: Fast (lint + unit tests) ──────────────────────────
+  fast:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - poi-service
+          - asset-service
+          - script-service
+          - transcription-service
+          - render-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install ruff black mypy
+          pip install ./libs/contracts ./libs/common
+          cd services/${{ matrix.service }}
+          pip install ".[dev]" 2>/dev/null || pip install . 2>/dev/null || true
+          pip install pytest pytest-asyncio httpx
+
+      - name: Lint ${{ matrix.service }}
+        run: |
+          cd services/${{ matrix.service }}
+          ruff check .
+          black --check .
+          mypy app/ --ignore-missing-imports --no-error-summary || true
+
+      - name: Test ${{ matrix.service }}
+        run: |
+          cd services/${{ matrix.service }}
+          python -m pytest tests/ -v --tb=short --junitxml=junit-${{ matrix.service }}.xml
+        env:
+          POSTGRES_HOST: ""
+          POSTGRES_DB: ""
+          API_KEY: test-key
+          LOG_FORMAT: text
+          RUNWAY_MODE: stub
+          NLP_PROVIDER: stub
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.service }}
+          path: services/${{ matrix.service }}/junit-*.xml
+
+  # ── Job 2: E2E (docker-compose + HTTP E2E) ──────────────────
+  e2e:
+    runs-on: ubuntu-latest
+    needs: fast
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install QA dependencies
+        run: pip install -r tools/qa/requirements.txt
+
+      - name: Start stack
+        run: docker compose up -d --build --wait
+        timeout-minutes: 10
+
+      - name: Wait for services
+        run: |
+          for port in 8001 8002 8003 8004 8005; do
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:$port/healthz >/dev/null 2>&1; then
+                echo "localhost:$port ready"
+                break
+              fi
+              sleep 5
+            done
+          done
+
+      - name: Run E2E tests
+        run: python -m tools.qa.run --e2e-only
+        env:
+          API_KEY: dev-api-key
+
+      - name: Upload QA artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-e2e-report
+          path: artifacts/qa/
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  # ── Job 3: Load (nightly or manual) ─────────────────────────
+  load:
+    runs-on: ubuntu-latest
+    needs: e2e
+    if: github.event_name == 'schedule' || github.event.inputs.run_load == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install QA deps + k6
+        run: |
+          pip install -r tools/qa/requirements.txt
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Start stack
+        run: docker compose up -d --build --wait
+        timeout-minutes: 10
+
+      - name: Wait for services
+        run: |
+          for port in 8001 8002 8003 8004 8005; do
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:$port/healthz >/dev/null 2>&1; then
+                echo "localhost:$port ready"
+                break
+              fi
+              sleep 5
+            done
+          done
+
+      - name: Run load test (baseline only in CI)
+        run: |
+          k6 run tools/qa/load/k6/load.js \
+            --env SCENARIO=baseline \
+            --env ARTIFACTS_DIR=artifacts/qa
+        env:
+          API_KEY: dev-api-key
+
+      - name: Run QA orchestrator (load-only report)
+        run: python -m tools.qa.run --load-only
+        env:
+          API_KEY: dev-api-key
+
+      - name: Upload load artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-load-report
+          path: artifacts/qa/
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+

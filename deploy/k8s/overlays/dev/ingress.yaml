@@ -1,0 +1,65 @@
+---
+# ── Nginx Ingress – dev environment ────────────────────────────────
+# Routes /poi/, /assets/, /scripts/, /transcriptions/, /renders/
+# to the corresponding services.
+#
+# For local dev with kind/minikube, ensure the nginx ingress controller
+# is installed:
+#   minikube addons enable ingress
+#   (or)  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/kind/deploy.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-ingress
+  namespace: poi-video-platform
+  labels:
+    app.kubernetes.io/part-of: real-estate-poi-video-platform
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          # ── POI Service ──
+          - path: /poi(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: poi-service
+                port:
+                  number: 8001
+          # ── Asset Service ──
+          - path: /assets(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: asset-service
+                port:
+                  number: 8002
+          # ── Script Service ──
+          - path: /scripts(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: script-service
+                port:
+                  number: 8003
+          # ── Transcription Service ──
+          - path: /transcriptions(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: transcription-service
+                port:
+                  number: 8004
+          # ── Render Service ──
+          - path: /renders(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: render-service
+                port:
+                  number: 8005
+

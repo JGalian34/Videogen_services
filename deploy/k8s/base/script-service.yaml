@@ -1,0 +1,80 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: script-service
+  namespace: poi-video-platform
+  labels:
+    app.kubernetes.io/name: script-service
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: real-estate-poi-video-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: script-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: script-service
+        app.kubernetes.io/component: api
+    spec:
+      containers:
+        - name: script-service
+          image: script-service:latest
+          ports:
+            - containerPort: 8003
+          envFrom:
+            - configMapRef:
+                name: platform-config
+            - secretRef:
+                name: platform-secrets
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB_SCRIPT)"
+            - name: KAFKA_TOPIC
+              value: video.events
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8003
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8003
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: script-service
+  namespace: poi-video-platform
+  labels:
+    app.kubernetes.io/name: script-service
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    app.kubernetes.io/name: script-service
+  ports:
+    - port: 8003
+      targetPort: 8003
+  type: ClusterIP
+

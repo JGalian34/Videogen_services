@@ -1,0 +1,90 @@
+# ───────────────────────────────────────────────────────────────────
+# End-to-end tests (Karate) against docker-compose stack.
+#
+# Runs nightly + on-demand.  Can also run on PRs to main (uncomment).
+# ───────────────────────────────────────────────────────────────────
+name: E2E – Karate Tests
+
+on:
+  # Nightly at 02:00 UTC
+  schedule:
+    - cron: "0 2 * * *"
+  # On PRs that touch service / test code (uncomment to activate)
+  # pull_request:
+  #   branches: [main]
+  #   paths:
+  #     - "services/**"
+  #     - "tests/karate/**"
+  workflow_dispatch: {}
+
+env:
+  POI_BASE_URL: http://localhost:8001
+  ASSET_BASE_URL: http://localhost:8002
+  SCRIPT_BASE_URL: http://localhost:8003
+  TRANSCRIPTION_BASE_URL: http://localhost:8004
+  RENDER_BASE_URL: http://localhost:8005
+  API_KEY: dev-api-key
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── Start services ────────────────────────────────────────────
+      - name: Start docker-compose stack
+        run: |
+          docker compose up -d --build --wait
+          echo "Waiting for services to become healthy..."
+          sleep 15
+
+      # ── Healthcheck – make sure all services are up ──────────────
+      - name: Verify services are running
+        run: |
+          for port in 8001 8002 8003 8004 8005; do
+            echo "Checking localhost:${port}/healthz ..."
+            curl -sf --retry 10 --retry-delay 3 --retry-all-errors \
+              "http://localhost:${port}/healthz" || exit 1
+          done
+          echo "All services healthy ✓"
+
+      # ── Java setup for Karate ─────────────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      # ── Run Karate tests ──────────────────────────────────────────
+      - name: Run Karate E2E tests
+        working-directory: tests/karate
+        run: |
+          mvn test \
+            -Dkarate.env=local \
+            -DPOI_BASE_URL=$POI_BASE_URL \
+            -DASSET_BASE_URL=$ASSET_BASE_URL \
+            -DSCRIPT_BASE_URL=$SCRIPT_BASE_URL \
+            -DTRANSCRIPTION_BASE_URL=$TRANSCRIPTION_BASE_URL \
+            -DRENDER_BASE_URL=$RENDER_BASE_URL \
+            -DAPI_KEY=$API_KEY
+
+      # ── Upload Karate reports ─────────────────────────────────────
+      - name: Upload Karate reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: karate-reports
+          path: |
+            tests/karate/target/karate-reports/
+            tests/karate/target/surefire-reports/
+          retention-days: 14
+
+      # ── Teardown ──────────────────────────────────────────────────
+      - name: Teardown docker-compose
+        if: always()
+        run: docker compose down -v
+

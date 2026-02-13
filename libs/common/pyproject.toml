@@ -1,0 +1,17 @@
+[project]
+name = "common"
+version = "0.1.0"
+description = "Shared utilities for real-estate-poi-video-platform microservices"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "python-json-logger>=2.0,<3.0",
+    "httpx>=0.27,<1.0",
+    "starlette>=0.36",
+    "fastapi>=0.115,<1.0",
+    "contracts",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

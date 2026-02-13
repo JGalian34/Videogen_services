@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# ── Inherit base ──────────────────────────────────────────────────
+resources:
+  - ../../base
+  - ingress.yaml
+
+# ── Image overrides ───────────────────────────────────────────────
+# Points to GHCR.  Replace OWNER with your GitHub org/user.
+# In CI these are set dynamically via `kustomize edit set image`.
+images:
+  - name: poi-service
+    newName: ghcr.io/OWNER/real-estate-poi-video-platform/poi-service
+    newTag: latest
+  - name: asset-service
+    newName: ghcr.io/OWNER/real-estate-poi-video-platform/asset-service
+    newTag: latest
+  - name: script-service
+    newName: ghcr.io/OWNER/real-estate-poi-video-platform/script-service
+    newTag: latest
+  - name: transcription-service
+    newName: ghcr.io/OWNER/real-estate-poi-video-platform/transcription-service
+    newTag: latest
+  - name: render-service
+    newName: ghcr.io/OWNER/real-estate-poi-video-platform/render-service
+    newTag: latest
+
+# ── Patches ───────────────────────────────────────────────────────
+patches:
+  # Force imagePullPolicy: Always so latest tag is always pulled
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component=api
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
+
