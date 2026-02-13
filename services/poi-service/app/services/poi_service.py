@@ -12,14 +12,15 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Optional
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from contracts.events import POIEventType
 
 from app.db.models import POI, POIStatus
-from app.db.schemas import POICreate, POIUpdate
+from app.db.schemas import POICreate, POIUpdate, POIResponse
 from app.integrations.kafka_producer import publish_poi_event
 from common.errors import NotFoundError, WorkflowError
 
@@ -173,4 +174,8 @@ class POIService:
     def _check_transition(poi: POI, target: str) -> None:
         allowed = _TRANSITIONS.get(poi.status, set())
         if target not in allowed:
-            raise WorkflowError(f"Cannot transition from '{poi.status}' to '{target}'. " f"Allowed: {sorted(allowed)}")
+            raise WorkflowError(
+                f"Cannot transition from '{poi.status}' to '{target}'. "
+                f"Allowed: {sorted(allowed)}"
+            )
+

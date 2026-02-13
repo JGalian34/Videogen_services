@@ -91,12 +91,8 @@ class VoiceoverService:
 
             # Publish event
             await publish_video_event(VideoEventType.VOICEOVER_COMPLETED, voiceover)
-            logger.info(
-                "Voiceover completed: %s (%.1fs, provider=%s)",
-                voiceover.id,
-                voiceover.total_duration_seconds or 0,
-                voiceover.provider,
-            )
+            logger.info("Voiceover completed: %s (%.1fs, provider=%s)",
+                        voiceover.id, voiceover.total_duration_seconds or 0, voiceover.provider)
 
         except Exception as exc:
             voiceover.status = TranscriptionStatus.FAILED.value
@@ -111,9 +107,7 @@ class VoiceoverService:
             raise NotFoundError(f"Voiceover {voiceover_id} not found")
         return obj
 
-    def list_voiceovers(
-        self, *, poi_id: uuid.UUID | None = None, script_id: uuid.UUID | None = None
-    ) -> tuple[list[Voiceover], int]:
+    def list_voiceovers(self, *, poi_id: uuid.UUID | None = None, script_id: uuid.UUID | None = None) -> tuple[list[Voiceover], int]:
         q = self.db.query(Voiceover)
         if poi_id:
             q = q.filter(Voiceover.poi_id == poi_id)
@@ -121,3 +115,4 @@ class VoiceoverService:
             q = q.filter(Voiceover.script_id == script_id)
         items = q.order_by(Voiceover.created_at.desc()).all()
         return items, len(items)
+

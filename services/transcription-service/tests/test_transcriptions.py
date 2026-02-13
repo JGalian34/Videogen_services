@@ -56,7 +56,6 @@ def test_healthz(client):
 
 # ── Error tests ────────────────────────────────────────────────────
 
-
 def test_get_transcription_not_found(client):
     fake_id = str(uuid.uuid4())
     resp = client.get(f"/transcriptions/{fake_id}", headers=HEADERS)
@@ -72,3 +71,4 @@ def test_missing_api_key(client):
 def test_start_transcription_missing_params(client):
     resp = client.post("/transcriptions/start", headers=HEADERS)
     assert resp.status_code == 422
+

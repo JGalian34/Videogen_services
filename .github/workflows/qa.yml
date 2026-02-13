@@ -47,7 +47,7 @@ jobs:
           cd services/${{ matrix.service }}
           ruff check .
           black --check .
-          mypy app/ --ignore-missing-imports --no-error-summary || true
+          mypy app/ --ignore-missing-imports --no-error-summary
 
       - name: Test ${{ matrix.service }}
         run: |

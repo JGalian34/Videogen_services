@@ -63,11 +63,7 @@ class TranscriptionService:
         job.duration_seconds = 12.5
         job.segments = [
             {"start": 0.0, "end": 3.0, "text": "Bienvenue dans cette visite virtuelle."},
-            {
-                "start": 3.0,
-                "end": 7.5,
-                "text": "Ce bien d'exception offre des prestations haut de gamme dans un cadre de vie idéal.",
-            },
+            {"start": 3.0, "end": 7.5, "text": "Ce bien d'exception offre des prestations haut de gamme dans un cadre de vie idéal."},
             {"start": 7.5, "end": 12.5, "text": "Les espaces de vie sont lumineux et spacieux."},
         ]
         job.completed_at = datetime.now(timezone.utc)
@@ -92,3 +88,4 @@ class TranscriptionService:
         total = q.count()
         items = q.order_by(Transcription.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
         return items, total
+

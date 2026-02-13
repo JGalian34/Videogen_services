@@ -79,7 +79,6 @@ def test_healthz(client):
 
 # ── Error tests ────────────────────────────────────────────────────
 
-
 def test_get_script_not_found(client):
     fake_id = str(uuid.uuid4())
     resp = client.get(f"/scripts/{fake_id}", headers=HEADERS)
@@ -102,3 +101,4 @@ def test_generate_script_poi_not_found(mock_poi_client, mock_asset_client, mock_
 def test_missing_api_key(client):
     resp = client.get("/scripts")
     assert resp.status_code == 401
+

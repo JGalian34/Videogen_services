@@ -58,7 +58,12 @@ class AssetService:
         if poi_id:
             q = q.filter(Asset.poi_id == poi_id)
         total = q.count()
-        items = q.order_by(Asset.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        items = (
+            q.order_by(Asset.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
         return items, total
 
     async def update_asset(self, asset_id: uuid.UUID, data: AssetUpdate) -> Asset:
@@ -84,3 +89,4 @@ class AssetService:
         await publish_asset_event(AssetEventType.ASSET_UPDATED, asset)
         logger.info("Asset updated: %s v%d", asset.id, asset.version)
         return asset
+

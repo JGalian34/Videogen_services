@@ -2,6 +2,7 @@
 
 import os
 import pytest
+from unittest.mock import AsyncMock, patch
 
 os.environ["POSTGRES_HOST"] = ""
 os.environ["POSTGRES_DB"] = ""
@@ -43,8 +44,10 @@ def client(db):
         yield db
 
     app.dependency_overrides[get_db] = _override
-    with TestClient(app) as c:
-        yield c
+    with patch("app.main.start_kafka_producer", new_callable=AsyncMock), \
+         patch("app.main.stop_kafka_producer", new_callable=AsyncMock):
+        with TestClient(app) as c:
+            yield c
     app.dependency_overrides.clear()
 
 

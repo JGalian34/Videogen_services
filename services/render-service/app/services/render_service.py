@@ -89,15 +89,12 @@ class RenderService:
             job.completed_scenes += 1
             self.db.commit()
 
-            await publish_video_event(
-                VideoEventType.RENDER_SCENE_GENERATED,
-                {
-                    "render_job_id": str(job.id),
-                    "scene_id": str(scene.id),
-                    "scene_number": scene.scene_number,
-                    "poi_id": str(job.poi_id),
-                },
-            )
+            await publish_video_event(VideoEventType.RENDER_SCENE_GENERATED, {
+                "render_job_id": str(job.id),
+                "scene_id": str(scene.id),
+                "scene_number": scene.scene_number,
+                "poi_id": str(job.poi_id),
+            })
 
         # Mark job complete
         job.status = RenderStatus.COMPLETED.value
@@ -106,15 +103,12 @@ class RenderService:
         self.db.commit()
         self.db.refresh(job)
 
-        await publish_video_event(
-            VideoEventType.RENDER_COMPLETED,
-            {
-                "render_job_id": str(job.id),
-                "poi_id": str(job.poi_id),
-                "script_id": str(job.script_id),
-                "total_scenes": job.total_scenes,
-            },
-        )
+        await publish_video_event(VideoEventType.RENDER_COMPLETED, {
+            "render_job_id": str(job.id),
+            "poi_id": str(job.poi_id),
+            "script_id": str(job.script_id),
+            "total_scenes": job.total_scenes,
+        })
         logger.info("Render completed: %s (%d scenes)", job.id, job.completed_scenes)
 
     async def attach_voiceover(self, render_id: uuid.UUID, voiceover_id: str, audio_path: str) -> RenderJob:
@@ -145,16 +139,13 @@ class RenderService:
         self.db.commit()
         self.db.refresh(job)
 
-        await publish_video_event(
-            VideoEventType.VIDEO_PUBLISHED,
-            {
-                "render_job_id": str(job.id),
-                "poi_id": str(job.poi_id),
-                "script_id": str(job.script_id),
-                "published_url": job.published_url,
-                "voiceover_audio_path": job.voiceover_audio_path,
-            },
-        )
+        await publish_video_event(VideoEventType.VIDEO_PUBLISHED, {
+            "render_job_id": str(job.id),
+            "poi_id": str(job.poi_id),
+            "script_id": str(job.script_id),
+            "published_url": job.published_url,
+            "voiceover_audio_path": job.voiceover_audio_path,
+        })
         logger.info("Video published: %s → %s", job.id, job.published_url)
         return job
 
@@ -189,3 +180,4 @@ class RenderService:
         total = q.count()
         items = q.order_by(RenderJob.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
         return items, total
+

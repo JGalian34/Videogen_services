@@ -8,6 +8,7 @@ os.environ["POSTGRES_HOST"] = ""
 os.environ["POSTGRES_DB"] = ""
 os.environ["API_KEY"] = "test-key"
 os.environ["LOG_FORMAT"] = "text"
+os.environ["ELEVENLABS_MODE"] = "stub"
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -43,7 +44,9 @@ def client(db):
         yield db
 
     app.dependency_overrides[get_db] = _override
-    with patch("app.integrations.kafka_producer.publish_video_event", new_callable=AsyncMock):
+    with patch("app.main.start_kafka_producer", new_callable=AsyncMock), \
+         patch("app.main.stop_kafka_producer", new_callable=AsyncMock), \
+         patch("app.integrations.kafka_producer.publish_video_event", new_callable=AsyncMock):
         with TestClient(app) as c:
             yield c
     app.dependency_overrides.clear()

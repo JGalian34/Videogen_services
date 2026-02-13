@@ -1,36 +1,54 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# ── Inherit base ──────────────────────────────────────────────────
+namespace: poi-video-platform-prod
+
 resources:
   - ../../base
-  - ingress.yaml
 
 # ── Image overrides ───────────────────────────────────────────────
+# In prod, always pin to a SHA tag – never use :latest.
+# These are updated by CI via `kustomize edit set image`.
 images:
   - name: poi-service
     newName: ghcr.io/jgalian34/videogen_services/poi-service
-    newTag: latest
+    newTag: sha-0000000
   - name: asset-service
     newName: ghcr.io/jgalian34/videogen_services/asset-service
-    newTag: latest
+    newTag: sha-0000000
   - name: script-service
     newName: ghcr.io/jgalian34/videogen_services/script-service
-    newTag: latest
+    newTag: sha-0000000
   - name: transcription-service
     newName: ghcr.io/jgalian34/videogen_services/transcription-service
-    newTag: latest
+    newTag: sha-0000000
   - name: render-service
     newName: ghcr.io/jgalian34/videogen_services/render-service
-    newTag: latest
+    newTag: sha-0000000
 
-# ── Patches ───────────────────────────────────────────────────────
+# ── Prod patches ──────────────────────────────────────────────────
 patches:
-  # Force imagePullPolicy: Always so latest tag is always pulled
   - target:
       kind: Deployment
       labelSelector: app.kubernetes.io/component=api
     patch: |-
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Always
+        value: IfNotPresent
+      - op: replace
+        path: /spec/replicas
+        value: 2
+  - target:
+      kind: ConfigMap
+      name: platform-config
+    patch: |-
+      - op: replace
+        path: /data/LOG_LEVEL
+        value: WARNING
+      - op: replace
+        path: /data/ENVIRONMENT
+        value: production
+      - op: replace
+        path: /data/RUNWAY_STUB_MODE
+        value: "false"
+

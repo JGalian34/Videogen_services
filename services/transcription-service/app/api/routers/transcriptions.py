@@ -47,3 +47,4 @@ async def list_transcriptions(
 @router.get("/{transcription_id}", response_model=TranscriptionResponse)
 async def get_transcription(transcription_id: uuid.UUID, svc: TranscriptionService = Depends(_svc)):
     return TranscriptionResponse.from_model(svc.get_transcription(transcription_id))
+

@@ -25,3 +25,4 @@ async def readyz():
             status_code=503,
             content={"status": "not_ready", "detail": str(exc)},
         )
+
